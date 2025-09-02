@@ -413,15 +413,117 @@
 //   );
 // }
 
+// import { useEffect, useRef, useState } from "react";
+// import io from "socket.io-client";
+
+// const socket = io("https://ai-ii3n.onrender.com"); // signaling server
+
+// export default function App() {
+//   const localVideoRef = useRef(null);
+//   const remoteVideoRef = useRef(null);
+//   const pcRef = useRef(null);
+//   const [room, setRoom] = useState("");
+//   const [joined, setJoined] = useState(false);
+
+//   useEffect(() => {
+//     socket.on("offer", async (offer) => {
+//       if (!pcRef.current) createPeerConnection();
+//       await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+
+//       const answer = await pcRef.current.createAnswer();
+//       await pcRef.current.setLocalDescription(answer);
+
+//       socket.emit("answer", { room, answer });
+//     });
+
+//     socket.on("answer", async (answer) => {
+//       if (pcRef.current) {
+//         await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+//       }
+//     });
+
+//     socket.on("ice-candidate", async (candidate) => {
+//       try {
+//         await pcRef.current.addIceCandidate(candidate);
+//       } catch (e) {
+//         console.error("Error adding ice candidate", e);
+//       }
+//     });
+//   }, [room]);
+
+//   const createPeerConnection = () => {
+//     const pc = new RTCPeerConnection();
+
+//     pc.onicecandidate = (event) => {
+//       if (event.candidate) {
+//         socket.emit("ice-candidate", { room, candidate: event.candidate });
+//       }
+//     };
+
+//     pc.ontrack = (event) => {
+//       remoteVideoRef.current.srcObject = event.streams[0];
+//     };
+
+//     pcRef.current = pc;
+//     return pc;
+//   };
+
+//   const joinRoom = async () => {
+//     setJoined(true);
+//     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+//     localVideoRef.current.srcObject = stream;
+
+//     const pc = createPeerConnection();
+//     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+//     socket.emit("join", room);
+//   };
+
+//   const callUser = async () => {
+//     if (!pcRef.current) return;
+//     const offer = await pcRef.current.createOffer();
+//     await pcRef.current.setLocalDescription(offer);
+
+//     socket.emit("offer", { room, offer });
+//   };
+
+//   return (
+//     <div className="p-4">
+//       {!joined ? (
+//         <div>
+//           <input
+//             type="text"
+//             placeholder="Enter room name"
+//             value={room}
+//             onChange={(e) => setRoom(e.target.value)}
+//           />
+//           <button onClick={joinRoom}>Join Room</button>
+//         </div>
+//       ) : (
+//         <div>
+//           <button onClick={callUser}>Start Call</button>
+//           <div style={{ display: "flex", gap: "20px", marginTop: "20px" }}>
+//             <video ref={localVideoRef} autoPlay muted playsInline width="300" />
+//             <video ref={remoteVideoRef} autoPlay playsInline width="300" />
+//           </div>
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
+
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
-const socket = io("http://localhost:5000"); // signaling server
+const socket = io("https://ai-ii3n.onrender.com", {
+  transports: ["websocket"]
+}); // signaling server
 
 export default function App() {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const pcRef = useRef(null);
+  const localStreamRef = useRef(null);
   const [room, setRoom] = useState("");
   const [joined, setJoined] = useState(false);
 
@@ -471,6 +573,7 @@ export default function App() {
   const joinRoom = async () => {
     setJoined(true);
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    localStreamRef.current = stream; // keep reference
     localVideoRef.current.srcObject = stream;
 
     const pc = createPeerConnection();
@@ -485,6 +588,28 @@ export default function App() {
     await pcRef.current.setLocalDescription(offer);
 
     socket.emit("offer", { room, offer });
+  };
+
+  const endCall = () => {
+    // stop all local tracks
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current = null;
+    }
+
+    // close peer connection
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    // clear video elements
+    if (localVideoRef.current) localVideoRef.current.srcObject = null;
+    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+
+    setJoined(false);
+    setRoom(""); // optional reset
+    socket.emit("leave", room); // notify server (you can handle this in server)
   };
 
   return (
@@ -502,6 +627,9 @@ export default function App() {
       ) : (
         <div>
           <button onClick={callUser}>Start Call</button>
+          <button onClick={endCall} style={{ marginLeft: "10px", color: "red" }}>
+            End Call
+          </button>
           <div style={{ display: "flex", gap: "20px", marginTop: "20px" }}>
             <video ref={localVideoRef} autoPlay muted playsInline width="300" />
             <video ref={remoteVideoRef} autoPlay playsInline width="300" />
