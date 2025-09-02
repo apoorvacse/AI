@@ -192,15 +192,93 @@
 //   console.log(`🚀 Signaling server running on port ${PORT}`);
 // });
 
-const express = require("express");
-const http = require("http");
-const { Server } = require("socket.io");
+// const express = require("express");
+// const http = require("http");
+// const { Server } = require("socket.io");
+
+// const app = express();
+// const server = http.createServer(app);
+// const io = new Server(server, {
+//   cors: {
+//     origin: "*", // allow all origins (Netlify frontend will connect here)
+//     methods: ["GET", "POST"]
+//   }
+// });
+
+// // Track users in rooms
+// const rooms = {};
+
+// io.on("connection", (socket) => {
+//   console.log(`✅ New client connected: ${socket.id}`);
+
+//   // When user joins a room
+//   socket.on("join", (roomId) => {
+//     socket.join(roomId);
+//     console.log(`📢 Client ${socket.id} joined room: ${roomId}`);
+
+//     if (!rooms[roomId]) {
+//       rooms[roomId] = [];
+//     }
+//     rooms[roomId].push(socket.id);
+
+//     // Notify others in the room
+//     socket.to(roomId).emit("user-joined", socket.id);
+//   });
+
+//   // When sending an offer
+//   socket.on("offer", (data) => {
+//     console.log(`📨 Offer from ${socket.id} for room: ${data.room}`);
+//     socket.to(data.room).emit("offer", {
+//       sdp: data.sdp,
+//       sender: socket.id
+//     });
+//   });
+
+//   // When sending an answer
+//   socket.on("answer", (data) => {
+//     console.log(`📨 Answer from ${socket.id} for room: ${data.room}`);
+//     socket.to(data.room).emit("answer", {
+//       sdp: data.sdp,
+//       sender: socket.id
+//     });
+//   });
+
+//   // When sending ICE candidates
+//   socket.on("ice-candidate", (data) => {
+//     console.log(`📡 ICE Candidate from ${socket.id} for room: ${data.room}`);
+//     socket.to(data.room).emit("ice-candidate", {
+//       candidate: data.candidate,
+//       sender: socket.id
+//     });
+//   });
+
+//   // When a client disconnects
+//   socket.on("disconnect", () => {
+//     console.log(`❌ Client disconnected: ${socket.id}`);
+//     for (const roomId in rooms) {
+//       rooms[roomId] = rooms[roomId].filter((id) => id !== socket.id);
+//       if (rooms[roomId].length === 0) {
+//         delete rooms[roomId];
+//       }
+//     }
+//   });
+// });
+
+// // ✅ Use Render’s dynamic PORT
+// const PORT = process.env.PORT || 10000;
+// server.listen(PORT, () => {
+//   console.log(`🚀 Signaling server running on port ${PORT}`);
+// });
+
+import express from "express";
+import http from "http";
+import { Server } from "socket.io";
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // allow all origins (Netlify frontend will connect here)
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
@@ -211,7 +289,6 @@ const rooms = {};
 io.on("connection", (socket) => {
   console.log(`✅ New client connected: ${socket.id}`);
 
-  // When user joins a room
   socket.on("join", (roomId) => {
     socket.join(roomId);
     console.log(`📢 Client ${socket.id} joined room: ${roomId}`);
@@ -221,11 +298,9 @@ io.on("connection", (socket) => {
     }
     rooms[roomId].push(socket.id);
 
-    // Notify others in the room
     socket.to(roomId).emit("user-joined", socket.id);
   });
 
-  // When sending an offer
   socket.on("offer", (data) => {
     console.log(`📨 Offer from ${socket.id} for room: ${data.room}`);
     socket.to(data.room).emit("offer", {
@@ -234,7 +309,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // When sending an answer
   socket.on("answer", (data) => {
     console.log(`📨 Answer from ${socket.id} for room: ${data.room}`);
     socket.to(data.room).emit("answer", {
@@ -243,7 +317,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // When sending ICE candidates
   socket.on("ice-candidate", (data) => {
     console.log(`📡 ICE Candidate from ${socket.id} for room: ${data.room}`);
     socket.to(data.room).emit("ice-candidate", {
@@ -252,7 +325,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // When a client disconnects
   socket.on("disconnect", () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
     for (const roomId in rooms) {
@@ -264,7 +336,6 @@ io.on("connection", (socket) => {
   });
 });
 
-// ✅ Use Render’s dynamic PORT
 const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🚀 Signaling server running on port ${PORT}`);
