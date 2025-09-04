@@ -776,249 +776,639 @@
 //   );
 // }
 
-import { useEffect, useRef, useState } from "react";
-import io from "socket.io-client";
+// screen sharing not possible
+// import { useEffect, useRef, useState } from "react";
+// import io from "socket.io-client";
 
-// 👉 Replace with your deployed Render server URL
-const socket = io("https://ai-ii3n.onrender.com", {
-  transports: ["websocket"],
-});
+// // 👉 Replace with your deployed Render server URL
+// const socket = io("https://ai-ii3n.onrender.com", {
+//   transports: ["websocket"],
+// });
+
+// export default function App() {
+//   const localVideoRef = useRef(null);
+//   const remoteVideoRef = useRef(null);
+//   const pcRef = useRef(null);
+//   const recorderRef = useRef(null);
+//   const localStreamRef = useRef(null);
+
+//   const [room, setRoom] = useState("");
+//   const [joined, setJoined] = useState(false);
+//   const [waiting, setWaiting] = useState(false);
+//   const [isMuted, setIsMuted] = useState(false);
+//   const [videoOff, setVideoOff] = useState(false);
+//   const [recording, setRecording] = useState(false);
+
+//   // --- socket handlers ---
+//   useEffect(() => {
+//     socket.on("offer", async (offer) => {
+//       if (!pcRef.current) createPeerConnection();
+//       await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+
+//       const answer = await pcRef.current.createAnswer();
+//       await pcRef.current.setLocalDescription(answer);
+
+//       socket.emit("answer", { room, answer });
+//       setWaiting(false);
+//     });
+
+//     socket.on("answer", async (answer) => {
+//       if (pcRef.current) {
+//         await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+//         setWaiting(false);
+//       }
+//     });
+
+//     socket.on("ice-candidate", async (candidate) => {
+//       try {
+//         await pcRef.current.addIceCandidate(candidate);
+//       } catch (e) {
+//         console.error("Error adding ICE candidate", e);
+//       }
+//     });
+
+//     return () => {
+//       socket.off("offer");
+//       socket.off("answer");
+//       socket.off("ice-candidate");
+//     };
+//   }, [room]);
+
+//   // --- peer connection setup ---
+ 
+//   const createPeerConnection = () => {
+//   const pc = new RTCPeerConnection({
+//     iceServers: [
+//       { urls: "stun:stun.l.google.com:19302" }  // 👈 Add STUN server
+//     ]
+//   });
+
+//   pc.onicecandidate = (event) => {
+//     if (event.candidate) {
+//       socket.emit("ice-candidate", { room, candidate: event.candidate });
+//     }
+//   };
+
+//   pc.ontrack = (event) => {
+//     if (remoteVideoRef.current) {
+//       remoteVideoRef.current.srcObject = event.streams[0];
+//     }
+//   };
+
+//   pcRef.current = pc;
+//   return pc;
+// };
+
+
+//   // --- join room ---
+//   const joinRoom = async () => {
+//     if (!room) {
+//       alert("Enter a room name first!");
+//       return;
+//     }
+
+//     setJoined(true);
+//     setWaiting(true);
+
+//     const stream = await navigator.mediaDevices.getUserMedia({
+//       video: true,
+//       audio: true,
+//     });
+//     localStreamRef.current = stream;
+//     localVideoRef.current.srcObject = stream;
+
+//     const pc = createPeerConnection();
+//     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+
+//     socket.emit("join", room);
+//   };
+
+//   // --- start call (send offer) ---
+//   const callUser = async () => {
+//     if (!pcRef.current) return;
+//     const offer = await pcRef.current.createOffer();
+//     await pcRef.current.setLocalDescription(offer);
+
+//     socket.emit("offer", { room, offer });
+//     setWaiting(true);
+//   };
+
+//   // --- end call ---
+//   const endCall = () => {
+//     if (localStreamRef.current) {
+//       localStreamRef.current.getTracks().forEach((track) => track.stop());
+//       localStreamRef.current = null;
+//     }
+//     if (pcRef.current) {
+//       pcRef.current.close();
+//       pcRef.current = null;
+//     }
+//     if (localVideoRef.current) localVideoRef.current.srcObject = null;
+//     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+
+//     setJoined(false);
+//     setWaiting(false);
+//     setIsMuted(false);
+//     setVideoOff(false);
+//     setRecording(false);
+
+//     socket.emit("leave", room);
+//   };
+
+//   // --- mute/unmute ---
+//   const toggleMute = () => {
+//     if (!localStreamRef.current) return;
+//     localStreamRef.current.getAudioTracks().forEach(
+//       (track) => (track.enabled = !track.enabled)
+//     );
+//     setIsMuted((prev) => !prev);
+//   };
+
+//   // --- video on/off ---
+//   const toggleVideo = () => {
+//     if (!localStreamRef.current) return;
+//     localStreamRef.current.getVideoTracks().forEach(
+//       (track) => (track.enabled = !track.enabled)
+//     );
+//     setVideoOff((prev) => !prev);
+//   };
+
+//   // --- share screen ---
+//   const shareScreen = async () => {
+//     const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+//     const videoTrack = screenStream.getVideoTracks()[0];
+
+//     const sender = pcRef.current.getSenders().find((s) => s.track.kind === "video");
+//     if (sender) sender.replaceTrack(videoTrack);
+
+//     videoTrack.onended = () => {
+//       if (localStreamRef.current) {
+//         const camTrack = localStreamRef.current.getVideoTracks()[0];
+//         sender.replaceTrack(camTrack);
+//       }
+//     };
+//   };
+
+//   // --- start recording ---
+//   const startRecording = () => {
+//     if (!localStreamRef.current || !remoteVideoRef.current.srcObject) return;
+
+//     const combinedStream = new MediaStream([
+//       ...localStreamRef.current.getTracks(),
+//       ...remoteVideoRef.current.srcObject.getTracks(),
+//     ]);
+
+//     const recorder = new MediaRecorder(combinedStream);
+//     recorderRef.current = recorder;
+
+//     const chunks = [];
+//     recorder.ondataavailable = (e) => chunks.push(e.data);
+//     recorder.onstop = () => {
+//       const blob = new Blob(chunks, { type: "video/webm" });
+//       const url = URL.createObjectURL(blob);
+
+//       const a = document.createElement("a");
+//       a.href = url;
+//       a.download = "recording.webm";
+//       a.click();
+//     };
+
+//     recorder.start();
+//     setRecording(true);
+//   };
+
+//   const stopRecording = () => {
+//     recorderRef.current?.stop();
+//     setRecording(false);
+//   };
+
+//   // --- UI ---
+//   return (
+//     <div style={{ background: "#1e1e1e", height: "100vh", color: "white", padding: "20px" }}>
+//       {!joined ? (
+//         <div>
+//           <input
+//             type="text"
+//             placeholder="Enter room name"
+//             value={room}
+//             onChange={(e) => setRoom(e.target.value)}
+//             style={{ padding: "8px", marginRight: "10px" }}
+//           />
+//           <button onClick={joinRoom}>Join Room</button>
+//         </div>
+//       ) : (
+//         <div>
+//           <div style={{ marginBottom: "10px" }}>
+//             <button onClick={callUser}>Start Call</button>
+//             <button onClick={endCall}>End Call</button>
+//             <button onClick={toggleMute}>{isMuted ? "Unmute" : "Mute"}</button>
+//             <button onClick={toggleVideo}>{videoOff ? "Turn Video On" : "Turn Video Off"}</button>
+//             <button onClick={shareScreen}>Share Screen</button>
+//             {!recording ? (
+//               <button onClick={startRecording}>Start Recording</button>
+//             ) : (
+//               <button onClick={stopRecording}>Stop Recording</button>
+//             )}
+//           </div>
+
+//           {waiting && <p>⏳ Waiting for peer to join...</p>}
+
+//           <div style={{ display: "flex", gap: "20px", marginTop: "20px" }}>
+//             <video ref={localVideoRef} autoPlay muted playsInline width="300" />
+//             <video ref={remoteVideoRef} autoPlay playsInline width="300" />
+//           </div>
+//         </div>
+//       )}
+//     </div>
+//   );
+// }
+
+// 
+import React, { useEffect, useRef, useState } from "react";
+import { io } from "socket.io-client";
+
+const SIGNALING_SERVER = "https://ai-ii3n.onrender.com";
+const socket = io(SIGNALING_SERVER, { transports: ["websocket"] });
 
 export default function App() {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+
   const pcRef = useRef(null);
-  const recorderRef = useRef(null);
   const localStreamRef = useRef(null);
+  const screenTrackRef = useRef(null);
+  const currentFacingMode = useRef("user");
 
-  const [room, setRoom] = useState("");
+  const recorderRef = useRef(null);
+  const recordedChunksRef = useRef([]);
+  const canvasRef = useRef(null);
+  const rafRef = useRef(null);
+
   const [joined, setJoined] = useState(false);
-  const [waiting, setWaiting] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
+  const [inCall, setInCall] = useState(false);
+  const [muted, setMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
+  const [screenSharing, setScreenSharing] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [pipMode, setPipMode] = useState(false);
+  const pipDragOffset = useRef({ x: 0, y: 0 });
 
-  // --- socket handlers ---
+  // ----------------- SOCKET -----------------
   useEffect(() => {
     socket.on("offer", async (offer) => {
       if (!pcRef.current) createPeerConnection();
-      await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
-
-      const answer = await pcRef.current.createAnswer();
-      await pcRef.current.setLocalDescription(answer);
-
-      socket.emit("answer", { room, answer });
-      setWaiting(false);
+      try {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pcRef.current.createAnswer();
+        await pcRef.current.setLocalDescription(answer);
+        socket.emit("answer", { room: "global-room", answer });
+        setInCall(true);
+      } catch (e) {
+        console.error("Error handling offer:", e);
+      }
     });
 
     socket.on("answer", async (answer) => {
-      if (pcRef.current) {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
-        setWaiting(false);
+      try {
+        if (pcRef.current && answer) {
+          await pcRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+          setInCall(true);
+        }
+      } catch (e) {
+        console.error("Error applying answer:", e);
       }
     });
 
     socket.on("ice-candidate", async (candidate) => {
       try {
-        await pcRef.current.addIceCandidate(candidate);
+        if (pcRef.current && candidate) {
+          await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+        }
       } catch (e) {
-        console.error("Error adding ICE candidate", e);
+        console.error("Error adding ICE candidate:", e);
       }
     });
+
+    socket.on("user-joined", () => {
+      if (pcRef.current && localStreamRef.current && !inCall) {
+        startCall();
+      }
+    });
+
+    socket.on("user-left", () => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
+      setInCall(false);
+    });
+
+    // auto-join once
+    joinRoom("global-room");
 
     return () => {
       socket.off("offer");
       socket.off("answer");
       socket.off("ice-candidate");
+      socket.off("user-joined");
+      socket.off("user-left");
     };
-  }, [room]);
+  }, []);
 
-  // --- peer connection setup ---
- 
+  // ----------------- PEER CONNECTION -----------------
   const createPeerConnection = () => {
-  const pc = new RTCPeerConnection({
-    iceServers: [
-      { urls: "stun:stun.l.google.com:19302" }  // 👈 Add STUN server
-    ]
-  });
+    if (pcRef.current) return pcRef.current;
 
-  pc.onicecandidate = (event) => {
-    if (event.candidate) {
-      socket.emit("ice-candidate", { room, candidate: event.candidate });
-    }
-  };
-
-  pc.ontrack = (event) => {
-    if (remoteVideoRef.current) {
-      remoteVideoRef.current.srcObject = event.streams[0];
-    }
-  };
-
-  pcRef.current = pc;
-  return pc;
-};
-
-
-  // --- join room ---
-  const joinRoom = async () => {
-    if (!room) {
-      alert("Enter a room name first!");
-      return;
-    }
-
-    setJoined(true);
-    setWaiting(true);
-
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: true,
-      audio: true,
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
     });
-    localStreamRef.current = stream;
-    localVideoRef.current.srcObject = stream;
 
-    const pc = createPeerConnection();
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit("ice-candidate", { room: "global-room", candidate: event.candidate });
+      }
+    };
 
-    socket.emit("join", room);
+    pc.ontrack = (event) => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+        setInCall(false);
+      }
+    };
+
+    pcRef.current = pc;
+    return pc;
   };
 
-  // --- start call (send offer) ---
-  const callUser = async () => {
-    if (!pcRef.current) return;
-    const offer = await pcRef.current.createOffer();
-    await pcRef.current.setLocalDescription(offer);
+  // ----------------- JOIN -----------------
+  const joinRoom = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: currentFacingMode.current },
+        audio: true,
+      });
 
-    socket.emit("offer", { room, offer });
-    setWaiting(true);
+      localStreamRef.current = stream;
+      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.muted = true;
+
+      const pc = createPeerConnection();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+
+      socket.emit("join", "global-room");
+      setJoined(true);
+    } catch (e) {
+      console.error("getUserMedia error:", e);
+    }
   };
 
-  // --- end call ---
+  // ----------------- CALL -----------------
+  const startCall = async () => {
+    try {
+      if (!pcRef.current) createPeerConnection();
+      const offer = await pcRef.current.createOffer();
+      await pcRef.current.setLocalDescription(offer);
+      socket.emit("offer", { room: "global-room", offer });
+    } catch (e) {
+      console.error("startCall error:", e);
+    }
+  };
+
   const endCall = () => {
+    if (recording) stopRecording();
+    if (screenSharing) stopScreenShare();
+
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => track.stop());
+      localStreamRef.current.getTracks().forEach((t) => t.stop());
       localStreamRef.current = null;
     }
+
     if (pcRef.current) {
-      pcRef.current.close();
+      try {
+        pcRef.current.close();
+      } catch {}
       pcRef.current = null;
     }
+
     if (localVideoRef.current) localVideoRef.current.srcObject = null;
     if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
 
     setJoined(false);
-    setWaiting(false);
-    setIsMuted(false);
-    setVideoOff(false);
-    setRecording(false);
+    setInCall(false);
 
-    socket.emit("leave", room);
+    socket.emit("leave", "global-room");
   };
 
-  // --- mute/unmute ---
+  // ----------------- TOGGLES -----------------
   const toggleMute = () => {
     if (!localStreamRef.current) return;
-    localStreamRef.current.getAudioTracks().forEach(
-      (track) => (track.enabled = !track.enabled)
-    );
-    setIsMuted((prev) => !prev);
+    localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
+    setMuted((m) => !m);
   };
 
-  // --- video on/off ---
   const toggleVideo = () => {
     if (!localStreamRef.current) return;
-    localStreamRef.current.getVideoTracks().forEach(
-      (track) => (track.enabled = !track.enabled)
-    );
-    setVideoOff((prev) => !prev);
+    localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
+    setVideoOff((v) => !v);
   };
 
-  // --- share screen ---
-  const shareScreen = async () => {
-    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-    const videoTrack = screenStream.getVideoTracks()[0];
+  const switchCamera = async () => {
+    try {
+      currentFacingMode.current = currentFacingMode.current === "user" ? "environment" : "user";
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: currentFacingMode.current },
+        audio: true,
+      });
 
-    const sender = pcRef.current.getSenders().find((s) => s.track.kind === "video");
-    if (sender) sender.replaceTrack(videoTrack);
+      const newVideoTrack = newStream.getVideoTracks()[0];
+      const pc = createPeerConnection();
+      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+      if (sender) await sender.replaceTrack(newVideoTrack);
 
-    videoTrack.onended = () => {
+      if (localStreamRef.current) {
+        localStreamRef.current.getVideoTracks().forEach((t) => t.stop());
+      }
+      localStreamRef.current = newStream;
+      localVideoRef.current.srcObject = newStream;
+      localVideoRef.current.muted = true;
+    } catch (e) {
+      console.error("switchCamera error:", e);
+    }
+  };
+
+  // screen share toggle
+  const startScreenShare = async () => {
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenTrack = screenStream.getVideoTracks()[0];
+      screenTrackRef.current = screenTrack;
+
+      const pc = createPeerConnection();
+      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
+      if (sender) {
+        await sender.replaceTrack(screenTrack);
+      }
+
+      localVideoRef.current.srcObject = screenStream;
+      setScreenSharing(true);
+
+      screenTrack.onended = () => stopScreenShare();
+    } catch (e) {
+      console.error("startScreenShare error:", e);
+    }
+  };
+
+  const stopScreenShare = async () => {
+    try {
+      const pc = createPeerConnection();
+      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
       if (localStreamRef.current) {
         const camTrack = localStreamRef.current.getVideoTracks()[0];
-        sender.replaceTrack(camTrack);
+        if (sender && camTrack) {
+          await sender.replaceTrack(camTrack);
+          localVideoRef.current.srcObject = localStreamRef.current;
+        }
       }
-    };
+      if (screenTrackRef.current) {
+        try {
+          screenTrackRef.current.stop();
+        } catch {}
+        screenTrackRef.current = null;
+      }
+      setScreenSharing(false);
+    } catch (e) {
+      console.error("stopScreenShare error:", e);
+    }
   };
 
-  // --- start recording ---
+  const toggleScreenShare = () => {
+    if (!screenSharing) startScreenShare();
+    else stopScreenShare();
+  };
+
+  // ----------------- RECORDING -----------------
   const startRecording = () => {
-    if (!localStreamRef.current || !remoteVideoRef.current.srcObject) return;
+    if (!localStreamRef.current || !remoteVideoRef.current?.srcObject) return;
 
-    const combinedStream = new MediaStream([
-      ...localStreamRef.current.getTracks(),
-      ...remoteVideoRef.current.srcObject.getTracks(),
-    ]);
+    const remote = remoteVideoRef.current;
+    const w = remote.videoWidth || 1280;
+    const h = remote.videoHeight || 720;
 
-    const recorder = new MediaRecorder(combinedStream);
-    recorderRef.current = recorder;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    canvasRef.current = canvas;
+    const ctx = canvas.getContext("2d");
 
-    const chunks = [];
-    recorder.ondataavailable = (e) => chunks.push(e.data);
+    const draw = () => {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, w, h);
+      if (remote && remote.srcObject) ctx.drawImage(remote, 0, 0, w, h);
+
+      const local = localVideoRef.current;
+      const pipW = Math.floor(w / 4);
+      const pipH = Math.floor((pipW * (local.videoHeight || 240)) / (local.videoWidth || 320));
+      const pipX = w - pipW - 12;
+      const pipY = h - pipH - 12;
+      if (local && local.srcObject) ctx.drawImage(local, pipX, pipY, pipW, pipH);
+
+      rafRef.current = requestAnimationFrame(draw);
+    };
+    draw();
+
+    const canvasStream = canvas.captureStream(30);
+    const audioContext = new AudioContext();
+    const dest = audioContext.createMediaStreamDestination();
+
+    if (localStreamRef.current) {
+      const localSource = audioContext.createMediaStreamSource(localStreamRef.current);
+      localSource.connect(dest);
+    }
+    const remoteStream = remoteVideoRef.current.srcObject;
+    if (remoteStream) {
+      try {
+        const remoteSource = audioContext.createMediaStreamSource(remoteStream);
+        remoteSource.connect(dest);
+      } catch (e) {}
+    }
+
+    const mixedStream = new MediaStream();
+    canvasStream.getVideoTracks().forEach((t) => mixedStream.addTrack(t));
+    dest.stream.getAudioTracks().forEach((t) => mixedStream.addTrack(t));
+
+    const recorder = new MediaRecorder(mixedStream, { mimeType: "video/webm; codecs=vp9" });
+    recordedChunksRef.current = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunksRef.current.push(e.data);
+    };
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: "video/webm" });
+      cancelAnimationFrame(rafRef.current);
+      const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
       const url = URL.createObjectURL(blob);
-
       const a = document.createElement("a");
       a.href = url;
-      a.download = "recording.webm";
+      a.download = `recording_${Date.now()}.webm`;
       a.click();
+      try {
+        audioContext.close();
+      } catch {}
+      canvasRef.current = null;
     };
 
-    recorder.start();
+    recorderRef.current = recorder;
+    recorder.start(1000);
     setRecording(true);
   };
 
   const stopRecording = () => {
-    recorderRef.current?.stop();
+    if (recorderRef.current && recorderRef.current.state !== "inactive") {
+      recorderRef.current.stop();
+    }
     setRecording(false);
   };
 
-  // --- UI ---
+  // ----------------- UI -----------------
   return (
-    <div style={{ background: "#1e1e1e", height: "100vh", color: "white", padding: "20px" }}>
-      {!joined ? (
-        <div>
-          <input
-            type="text"
-            placeholder="Enter room name"
-            value={room}
-            onChange={(e) => setRoom(e.target.value)}
-            style={{ padding: "8px", marginRight: "10px" }}
-          />
-          <button onClick={joinRoom}>Join Room</button>
-        </div>
-      ) : (
-        <div>
-          <div style={{ marginBottom: "10px" }}>
-            <button onClick={callUser}>Start Call</button>
-            <button onClick={endCall}>End Call</button>
-            <button onClick={toggleMute}>{isMuted ? "Unmute" : "Mute"}</button>
-            <button onClick={toggleVideo}>{videoOff ? "Turn Video On" : "Turn Video Off"}</button>
-            <button onClick={shareScreen}>Share Screen</button>
-            {!recording ? (
-              <button onClick={startRecording}>Start Recording</button>
-            ) : (
-              <button onClick={stopRecording}>Stop Recording</button>
-            )}
-          </div>
+    <div style={{ background: "#0b1020", height: "100vh", display: "flex", flexDirection: "column" }}>
+      <style>{`
+        .video-area { flex:1; display:flex; align-items:center; justify-content:center; position:relative; }
+        .video-box { position:relative; width:70%; max-width:1100px; min-height:420px; background:black; border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+        video { width:100%; height:100%; object-fit:cover; background:black; }
+        #local-pip { position:absolute; width:180px; height:120px; right:16px; bottom:16px; border-radius:8px; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,0.6); }
+        #local-pip video { width:100%; height:100%; object-fit:cover; }
+        .controls { position:fixed; left:50%; transform:translateX(-50%); bottom:18px; display:flex; gap:12px; }
+        .control-btn { width:58px; height:58px; border-radius:50%; background:#111827; display:flex; align-items:center; justify-content:center; color:white; font-size:22px; cursor:pointer; box-shadow:0 6px 18px rgba(0,0,0,0.5); }
+        .control-btn.red { background:#ef4444; }
+        .control-btn.warn { background:#f59e0b; }
+      `}</style>
 
-          {waiting && <p>⏳ Waiting for peer to join...</p>}
-
-          <div style={{ display: "flex", gap: "20px", marginTop: "20px" }}>
-            <video ref={localVideoRef} autoPlay muted playsInline width="300" />
-            <video ref={remoteVideoRef} autoPlay playsInline width="300" />
-          </div>
+      <div className="video-area">
+        <div className="video-box">
+          <video ref={remoteVideoRef} autoPlay playsInline />
+          {joined && (
+            <div id="local-pip">
+              <video ref={localVideoRef} autoPlay muted playsInline />
+            </div>
+          )}
         </div>
-      )}
+      </div>
+
+      <div className="controls">
+        <div title="Mute" className={`control-btn ${muted ? "red" : ""}`} onClick={toggleMute}>
+          {muted ? "🔈" : "🎤"}
+        </div>
+        <div title="Video" className={`control-btn ${videoOff ? "red" : ""}`} onClick={toggleVideo}>
+          {videoOff ? "📵" : "📷"}
+        </div>
+        <div title="Switch Camera" className="control-btn" onClick={switchCamera}>🔁</div>
+        <div title={screenSharing ? "Stop Share" : "Share Screen"} className={`control-btn ${screenSharing ? "warn" : ""}`} onClick={toggleScreenShare}>🖥️</div>
+        <div title={recording ? "Stop Rec" : "Record"} className={`control-btn ${recording ? "red" : ""}`} onClick={() => recording ? stopRecording() : startRecording()}>⏺</div>
+        <div title="Hang up" className="control-btn red" onClick={endCall}>📞</div>
+      </div>
     </div>
   );
 }
-
