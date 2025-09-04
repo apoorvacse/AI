@@ -834,22 +834,30 @@ export default function App() {
   }, [room]);
 
   // --- peer connection setup ---
+ 
   const createPeerConnection = () => {
-    const pc = new RTCPeerConnection();
+  const pc = new RTCPeerConnection({
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" }  // 👈 Add STUN server
+    ]
+  });
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("ice-candidate", { room, candidate: event.candidate });
-      }
-    };
-
-    pc.ontrack = (event) => {
-      remoteVideoRef.current.srcObject = event.streams[0];
-    };
-
-    pcRef.current = pc;
-    return pc;
+  pc.onicecandidate = (event) => {
+    if (event.candidate) {
+      socket.emit("ice-candidate", { room, candidate: event.candidate });
+    }
   };
+
+  pc.ontrack = (event) => {
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = event.streams[0];
+    }
+  };
+
+  pcRef.current = pc;
+  return pc;
+};
+
 
   // --- join room ---
   const joinRoom = async () => {
