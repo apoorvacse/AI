@@ -2968,337 +2968,523 @@
 //   );
 // }
 
-// App.js (replace your current file with this)
-import React, { useEffect, useRef, useState } from "react";
-import { io } from "socket.io-client";
+// import React, { useEffect, useRef, useState } from "react";
+// import { io } from "socket.io-client";
 
-const SIGNALING_SERVER = "https://ai-ii3n.onrender.com";
-const ROOM = "global-room";
-const socket = io(SIGNALING_SERVER, { transports: ["websocket"] });
+// const SIGNALING_SERVER = "https://ai-ii3n.onrender.com";
+// const socket = io(SIGNALING_SERVER, { transports: ["websocket"] });
 
-export default function App() {
-  const localVideoRef = useRef(null);
-  const remoteVideoRef = useRef(null);
-  const pcRef = useRef(null);
-  const localStreamRef = useRef(null);
-  const remoteStreamRef = useRef(null);
-  const currentFacingMode = useRef("user");
+// export default function App() {
+//   const localVideoRef = useRef(null);
+//   const remoteVideoRef = useRef(null);
+//   const pcRef = useRef(null);
+//   const localStreamRef = useRef(null);
+//   const currentFacingMode = useRef("user");
 
-  const [inCall, setInCall] = useState(false);       // whether we've started call (sent offer)
-  const [muted, setMuted] = useState(false);
-  const [videoOff, setVideoOff] = useState(false);
-  const [remoteActive, setRemoteActive] = useState(false); // remote stream present
+//   const [inCall, setInCall] = useState(false);
+//   const [muted, setMuted] = useState(false);
+//   const [videoOff, setVideoOff] = useState(false);
 
-  // --- socket handlers / lifecycle ---
-  useEffect(() => {
-    joinRoom();
+//   // ----------------- SOCKET -----------------
+//   useEffect(() => {
+//     joinRoom();
 
-    socket.on("user-joined", (data) => {
-      console.log("📢 user-joined:", data);
-      // Existing participant(s) should start the call (send offer)
-      // This event is received by peers that were already in the room (server uses socket.to(room).emit)
-      if (pcRef.current && localStreamRef.current && !inCall) {
-        startCall();
-      }
-    });
+//     socket.on("users-in-room", (users) => {
+//       console.log("👥 Users already in room:", users);
+//       // I’m joining second → just create PC and wait for offer
+//       if (users.length > 0) {
+//         createPeerConnection();
+//       }
+//     });
 
-    socket.on("offer", async ({ sdp, from }) => {
-      console.log("📩 Received offer from", from);
-      if (!pcRef.current) createPeerConnection();
-      try {
-        await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-        const answer = await pcRef.current.createAnswer();
-        await pcRef.current.setLocalDescription(answer);
-        socket.emit("answer", { room: ROOM, sdp: pcRef.current.localDescription });
-        console.log("📤 Sent answer");
-        setInCall(true);
-      } catch (err) {
-        console.error("❌ Error handling offer:", err);
-      }
-    });
+//     socket.on("user-joined", () => {
+//       console.log("📢 Someone joined → I start call");
+//       if (pcRef.current && localStreamRef.current && !inCall) {
+//         startCall();
+//       }
+//     });
 
-    socket.on("answer", async ({ sdp, from }) => {
-      console.log("📩 Received answer from", from);
-      try {
-        if (pcRef.current && sdp) {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-          setInCall(true);
-        }
-      } catch (err) {
-        console.error("❌ Error handling answer:", err);
-      }
-    });
+//     socket.on("offer", async ({ sdp }) => {
+//       console.log("📩 Got offer");
+//       if (!pcRef.current) createPeerConnection();
+//       try {
+//         await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+//         const answer = await pcRef.current.createAnswer();
+//         await pcRef.current.setLocalDescription(answer);
+//         socket.emit("answer", { room: "global-room", sdp: pcRef.current.localDescription });
+//         setInCall(true);
+//       } catch (e) {
+//         console.error("❌ Error handling offer:", e);
+//       }
+//     });
 
-    socket.on("ice-candidate", async ({ candidate, from }) => {
-      // server forwards candidate as { candidate, from }
-      try {
-        if (pcRef.current && candidate) {
-          await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
-          // console.log("✅ Added ICE candidate from", from);
-        }
-      } catch (err) {
-        console.error("❌ Error adding ICE candidate:", err);
-      }
-    });
+//     socket.on("answer", async ({ sdp }) => {
+//       console.log("📩 Got answer");
+//       if (pcRef.current && sdp) {
+//         await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+//         setInCall(true);
+//       }
+//     });
 
-    socket.on("user-left", (data) => {
-      console.log("👋 user-left", data);
-      cleanupRemote();
-    });
+//     socket.on("ice-candidate", async ({ candidate }) => {
+//       console.log("📩 Got ICE candidate");
+//       try {
+//         if (pcRef.current && candidate) {
+//           await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+//         }
+//       } catch (e) {
+//         console.error("❌ Error adding candidate:", e);
+//       }
+//     });
 
-    return () => {
-      socket.off();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+//     socket.on("user-left", () => {
+//       console.log("👋 User left");
+//       if (remoteVideoRef.current) {
+//         remoteVideoRef.current.srcObject = null;
+//       }
+//       setInCall(false);
+//     });
 
-  // --- create peer connection and ensure local tracks are added ---
-  const createPeerConnection = () => {
-    if (pcRef.current) return pcRef.current;
+//     return () => {
+//       socket.off();
+//     };
+//   }, []);
 
-    console.log("⚙️ Creating RTCPeerConnection");
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-    });
+//   // ----------------- PEER CONNECTION -----------------
+//   const createPeerConnection = () => {
+//     if (pcRef.current) return pcRef.current;
+//     const pc = new RTCPeerConnection({
+//       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+//     });
 
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        socket.emit("ice-candidate", { room: ROOM, candidate: event.candidate });
-      }
-    };
+//     pc.onicecandidate = (event) => {
+//       if (event.candidate) {
+//         socket.emit("ice-candidate", { room: "global-room", candidate: event.candidate });
+//       }
+//     };
 
-    pc.ontrack = (event) => {
-      console.log("🎥 ontrack event", event);
-      // Prefer event.streams[0] (most browsers provide: event.streams)
-      if (event.streams && event.streams[0]) {
-        remoteStreamRef.current = event.streams[0];
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStreamRef.current;
-        setRemoteActive(true);
-      } else {
-        // fallback: build MediaStream from tracks
-        if (!remoteStreamRef.current) remoteStreamRef.current = new MediaStream();
-        if (event.track) remoteStreamRef.current.addTrack(event.track);
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = remoteStreamRef.current;
-        setRemoteActive(true);
-      }
-    };
+//     pc.ontrack = (event) => {
+//       console.log("🎥 Remote track received");
+//       if (remoteVideoRef.current) {
+//         remoteVideoRef.current.srcObject = event.streams[0];
+//       }
+//     };
 
-    pc.onconnectionstatechange = () => {
-      console.log("🔁 PC connectionState:", pc.connectionState);
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
-        cleanupRemote();
-      }
-    };
+//     // 🔥 Always add local tracks to new PC
+//     if (localStreamRef.current) {
+//       localStreamRef.current.getTracks().forEach((track) => {
+//         pc.addTrack(track, localStreamRef.current);
+//       });
+//     }
 
-    // add local tracks (if we already have localStream)
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((track) => pc.addTrack(track, localStreamRef.current));
-    }
+//     pcRef.current = pc;
+//     return pc;
+//   };
 
-    pcRef.current = pc;
-    return pc;
-  };
+//   // ----------------- JOIN -----------------
+//   const joinRoom = async () => {
+//     try {
+//       const stream = await navigator.mediaDevices.getUserMedia({
+//         video: { facingMode: currentFacingMode.current },
+//         audio: true,
+//       });
 
-  // --- join room & get media ---
-  const joinRoom = async () => {
-    try {
-      console.log("🔔 Joining room & requesting media");
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: currentFacingMode.current },
-        audio: true,
-      });
+//       localStreamRef.current = stream;
+//       localVideoRef.current.srcObject = stream;
+//       localVideoRef.current.muted = true;
 
-      localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true;
-      }
+//       createPeerConnection();
 
-      // create PC and add local tracks
-      createPeerConnection();
+//       socket.emit("join", "global-room");
+//     } catch (e) {
+//       console.error("❌ getUserMedia error:", e);
+//       alert("⚠️ Please allow camera & microphone access.");
+//     }
+//   };
 
-      // notify server that we joined
-      socket.emit("join", ROOM);
-      console.log("✅ Joined room", ROOM);
-    } catch (err) {
-      console.error("❌ getUserMedia error:", err);
-      alert("⚠️ Please allow camera & microphone access and ensure the page is loaded over HTTPS.");
-    }
-  };
+//   // ----------------- CALL -----------------
+//   const startCall = async () => {
+//     if (!pcRef.current) createPeerConnection();
+//     console.log("📤 Sending offer");
+//     const offer = await pcRef.current.createOffer();
+//     await pcRef.current.setLocalDescription(offer);
+//     socket.emit("offer", { room: "global-room", sdp: offer });
+//     setInCall(true);
+//   };
 
-  // --- start call (create offer) ---
-  const startCall = async () => {
-    if (!pcRef.current) createPeerConnection();
-    try {
-      console.log("📤 Creating offer...");
-      const offer = await pcRef.current.createOffer();
-      await pcRef.current.setLocalDescription(offer);
-      socket.emit("offer", { room: ROOM, sdp: offer });
-      setInCall(true);
-      console.log("📤 Offer sent");
-    } catch (err) {
-      console.error("❌ startCall error:", err);
-    }
-  };
+//   const endCall = () => {
+//     if (localStreamRef.current) {
+//       localStreamRef.current.getTracks().forEach((t) => t.stop());
+//     }
+//     if (pcRef.current) pcRef.current.close();
+//     localVideoRef.current.srcObject = null;
+//     remoteVideoRef.current.srcObject = null;
 
-  // --- end call / cleanup ---
-  const endCall = () => {
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
-    }
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    if (localVideoRef.current) localVideoRef.current.srcObject = null;
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    localStreamRef.current = null;
-    remoteStreamRef.current = null;
-    setInCall(false);
-    setRemoteActive(false);
-    socket.emit("leave", ROOM);
-    console.log("👋 Left call");
-  };
+//     setInCall(false);
+//     socket.emit("leave", "global-room");
+//   };
 
-  const cleanupRemote = () => {
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
-    remoteStreamRef.current = null;
-    setRemoteActive(false);
-    setInCall(false);
-  };
+//   // ----------------- TOGGLES -----------------
+//   const toggleMute = () => {
+//     if (!localStreamRef.current) return;
+//     localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
+//     setMuted((m) => !m);
+//   };
 
-  // --- toggles ---
-  const toggleMute = () => {
-    if (!localStreamRef.current) return;
-    localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
-    setMuted((m) => !m);
-  };
+//   const toggleVideo = () => {
+//     if (!localStreamRef.current) return;
+//     localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
+//     setVideoOff((v) => !v);
+//   };
 
-  const toggleVideo = () => {
-    if (!localStreamRef.current) return;
-    localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
-    setVideoOff((v) => !v);
-  };
+//   const switchCamera = async () => {
+//     currentFacingMode.current = currentFacingMode.current === "user" ? "environment" : "user";
+//     joinRoom();
+//   };
 
-  const switchCamera = async () => {
-    // best-effort: stop tracks and re-get media with opposite facingMode
-    try {
-      currentFacingMode.current = currentFacingMode.current === "user" ? "environment" : "user";
-      if (localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => t.stop());
-      }
-      // remove local tracks from existing PC and re-add new ones
-      if (pcRef.current) {
-        // close and recreate peer for simplicity
-        pcRef.current.close();
-        pcRef.current = null;
-      }
-      await joinRoom();
-      // if a peer exists, renegotiation will happen because joinRoom re-adds tracks and the other peer should detect user-joined/offer flow
-      console.log("🔁 Camera switched");
-    } catch (err) {
-      console.error("❌ switchCamera error:", err);
-    }
-  };
+//   // ----------------- UI -----------------
+//   return (
+//     <div style={{ background: "#0b1020", height: "100vh", width: "100vw", display: "flex", flexDirection: "column" }}>
+//       <style>{`
+//         .video-area {
+//           flex: 1;
+//           display: flex;
+//           width: 100%;
+//           height: 100%;
+//         }
+//         .video-box {
+//           flex: 1;
+//           background: black;
+//           display: flex;
+//           justify-content: center;
+//           align-items: center;
+//         }
+//         .video-box.full {
+//           flex: 1 1 100%;
+//         }
+//         video {
+//           width: 100%;
+//           height: 100%;
+//           object-fit: cover;
+//         }
+//         .controls {
+//           position: fixed;
+//           left: 50%;
+//           transform: translateX(-50%);
+//           bottom: 22px;
+//           display: flex;
+//           gap: 18px;
+//           justify-content: center;
+//           align-items: center;
+//         }
+//         .control-btn {
+//           width: 64px;
+//           height: 64px;
+//           border-radius: 50%;
+//           background: #1f2937;
+//           display: flex;
+//           align-items: center;
+//           justify-content: center;
+//           color: white;
+//           font-size: 26px;
+//           cursor: pointer;
+//           box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+//           transition: transform 0.2s ease;
+//         }
+//         .control-btn:hover { transform: scale(1.1); }
+//         .control-btn.end { background: #f87171; }
+//       `}</style>
 
-  // --- UI rendering --- (desktop: side-by-side; mobile: remote fullscreen + small local)
-  return (
-    <div style={{ background: "#0b1020", height: "100vh", width: "100vw", display: "flex", flexDirection: "column" }}>
-      <style>{`
-        .video-area { flex: 1; width: 100%; height: 100%; }
-        video { object-fit: cover; background: black; }
+//       <div className="video-area">
+//         {!inCall ? (
+//           <div className="video-box full">
+//             <video ref={localVideoRef} autoPlay playsInline muted />
+//           </div>
+//         ) : (
+//           <>
+//             <div className="video-box">
+//               <video ref={localVideoRef} autoPlay playsInline muted />
+//             </div>
+//             <div className="video-box">
+//               <video ref={remoteVideoRef} autoPlay playsInline />
+//             </div>
+//           </>
+//         )}
+//       </div>
 
-        /* Desktop: side-by-side */
-        @media (min-width: 769px) {
-          .desktop-view { display: block; width: 100%; height: 100%; }
-          .desktop-split { display: flex; width: 100%; height: 100%; }
-          .desktop-split video { width: 50%; height: 100%; }
-          .mobile-view { display: none; }
-        }
+//       <div className="controls">
+//         <div title="Mute" className={`control-btn ${muted ? "end" : ""}`} onClick={toggleMute}>
+//           {muted ? "🔈" : "🎤"}
+//         </div>
+//         <div title="Video" className={`control-btn ${videoOff ? "end" : ""}`} onClick={toggleVideo}>
+//           {videoOff ? "📵" : "📷"}
+//         </div>
+//         <div title="Switch Camera" className="control-btn" onClick={switchCamera}>🔁</div>
+//         <div title="End Call" className="control-btn end" onClick={endCall}>📞</div>
+//       </div>
+//     </div>
+//   );
+// }
 
-        /* Mobile: fullscreen remote, small local */
-        @media (max-width: 768px) {
-          .desktop-view { display: none; }
-          .mobile-view { display: block; width: 100%; height: 100%; position: relative; }
-          .remote-full { width: 100%; height: 100%; }
-          .local-small {
-            position: absolute;
-            bottom: 12px;
-            right: 12px;
-            width: 120px;
-            height: 160px;
-            border-radius: 12px;
-            border: 2px solid rgba(255,255,255,0.85);
-            object-fit: cover;
-            background: black;
-          }
-        }
+        // sushant2
 
-        .controls {
-          position: fixed;
-          left: 50%;
-          transform: translateX(-50%);
-          bottom: 22px;
-          display: flex;
-          gap: 14px;
-          justify-content: center;
-          align-items: center;
-        }
-        .control-btn {
-          width: 60px;
-          height: 60px;
-          border-radius: 50%;
-          background: #1f2937;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-size: 22px;
-          cursor: pointer;
-          box-shadow: 0 6px 18px rgba(0,0,0,0.5);
-        }
-        .control-btn.end { background: #f87171; }
-      `}</style>
+//         import React, { useEffect, useRef, useState } from "react";
+// import { io } from "socket.io-client";
 
-      <div className="video-area">
-        {/* Desktop layout */}
-        <div className="desktop-view">
-          {remoteActive ? (
-            <div className="desktop-split">
-              <video ref={localVideoRef} autoPlay playsInline muted />
-              <video ref={remoteVideoRef} autoPlay playsInline />
-            </div>
-          ) : (
-            // only local (full)
-            <div style={{ width: "100%", height: "100%" }}>
-              <video ref={localVideoRef} autoPlay playsInline muted style={{ width: "100%", height: "100%" }} />
-            </div>
-          )}
-        </div>
+// const SIGNALING_SERVER = "https://ai-ii3n.onrender.com";
+// const socket = io(SIGNALING_SERVER, { transports: ["websocket"] });
 
-        {/* Mobile layout */}
-        <div className="mobile-view">
-          {remoteActive ? (
-            <>
-              <video ref={remoteVideoRef} className="remote-full" autoPlay playsInline />
-              <video ref={localVideoRef} className="local-small" autoPlay playsInline muted />
-            </>
-          ) : (
-            <video ref={localVideoRef} className="remote-full" autoPlay playsInline muted />
-          )}
-        </div>
-      </div>
+// export default function App() {
+//   const localVideoRef = useRef(null);
+//   const remoteVideoRef = useRef(null);
+//   const pcRef = useRef(null);
+//   const localStreamRef = useRef(null);
+//   const currentFacingMode = useRef("user");
 
-      <div className="controls">
-        <div title="Mute" className="control-btn" onClick={toggleMute}>
-          {muted ? "🔈" : "🎤"}
-        </div>
-        <div title="Video" className="control-btn" onClick={toggleVideo}>
-          {videoOff ? "📵" : "📷"}
-        </div>
-        <div title="Switch Camera" className="control-btn" onClick={switchCamera}>🔁</div>
-        <div title="End Call" className="control-btn end" onClick={endCall}>📞</div>
-      </div>
-    </div>
-  );
-}
+//   const [inCall, setInCall] = useState(false);
+//   const [muted, setMuted] = useState(false);
+//   const [videoOff, setVideoOff] = useState(false);
+
+//   // ----------------- SOCKET -----------------
+//   useEffect(() => {
+//     joinRoom();
+
+//     socket.on("users-in-room", (users) => {
+//       console.log("👥 Users already in room:", users);
+//       if (users.length > 0) {
+//         createPeerConnection();
+//       }
+//     });
+
+//     socket.on("user-joined", () => {
+//       console.log("📢 Someone joined → I start call");
+//       if (pcRef.current && localStreamRef.current && !inCall) {
+//         startCall();
+//       }
+//     });
+
+//     socket.on("offer", async ({ sdp }) => {
+//       console.log("📩 Got offer");
+//       if (!pcRef.current) createPeerConnection();
+//       try {
+//         await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+//         const answer = await pcRef.current.createAnswer();
+//         await pcRef.current.setLocalDescription(answer);
+//         socket.emit("answer", { room: "global-room", sdp: pcRef.current.localDescription });
+//         setInCall(true);
+//       } catch (e) {
+//         console.error("❌ Error handling offer:", e);
+//       }
+//     });
+
+//     socket.on("answer", async ({ sdp }) => {
+//       console.log("📩 Got answer");
+//       if (pcRef.current && sdp) {
+//         await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+//         setInCall(true);
+//       }
+//     });
+
+//     socket.on("ice-candidate", async ({ candidate }) => {
+//       console.log("📩 Got ICE candidate");
+//       try {
+//         if (pcRef.current && candidate) {
+//           await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+//         }
+//       } catch (e) {
+//         console.error("❌ Error adding candidate:", e);
+//       }
+//     });
+
+//     socket.on("user-left", () => {
+//       console.log("👋 User left");
+//       if (remoteVideoRef.current) {
+//         remoteVideoRef.current.srcObject = null;
+//       }
+//       setInCall(false);
+//     });
+
+//     return () => {
+//       socket.off();
+//     };
+//   }, []);
+
+//   // ----------------- PEER CONNECTION -----------------
+//   const createPeerConnection = () => {
+//     if (pcRef.current) {
+//       pcRef.current.close();
+//     }
+
+//     const pc = new RTCPeerConnection({
+//       iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+//     });
+
+//     pc.onicecandidate = (event) => {
+//       if (event.candidate) {
+//         socket.emit("ice-candidate", { room: "global-room", candidate: event.candidate });
+//       }
+//     };
+
+//     pc.ontrack = (event) => {
+//       console.log("🎥 Remote track received");
+//       if (remoteVideoRef.current) {
+//         remoteVideoRef.current.srcObject = event.streams[0];
+//       }
+//     };
+
+//     // ✅ Always add local tracks
+//     if (localStreamRef.current) {
+//       localStreamRef.current.getTracks().forEach((track) => {
+//         pc.addTrack(track, localStreamRef.current);
+//       });
+//     }
+
+//     pcRef.current = pc;
+//     return pc;
+//   };
+
+//   // ----------------- JOIN -----------------
+//   const joinRoom = async () => {
+//     try {
+//       const stream = await navigator.mediaDevices.getUserMedia({
+//         video: { facingMode: currentFacingMode.current },
+//         audio: true,
+//       });
+
+//       localStreamRef.current = stream;
+//       localVideoRef.current.srcObject = stream;
+//       localVideoRef.current.muted = true;
+
+//       // ✅ Reset connection each time
+//       createPeerConnection();
+
+//       socket.emit("join", "global-room");
+//     } catch (e) {
+//       console.error("❌ getUserMedia error:", e);
+//       alert("⚠️ Please allow camera & microphone access.");
+//     }
+//   };
+
+//   // ----------------- CALL -----------------
+//   const startCall = async () => {
+//     if (!pcRef.current) createPeerConnection();
+//     console.log("📤 Sending offer");
+//     const offer = await pcRef.current.createOffer();
+//     await pcRef.current.setLocalDescription(offer);
+//     socket.emit("offer", { room: "global-room", sdp: offer });
+//     setInCall(true);
+//   };
+
+//   const endCall = () => {
+//     if (localStreamRef.current) {
+//       localStreamRef.current.getTracks().forEach((t) => t.stop());
+//     }
+//     if (pcRef.current) pcRef.current.close();
+//     localVideoRef.current.srcObject = null;
+//     remoteVideoRef.current.srcObject = null;
+
+//     setInCall(false);
+//     socket.emit("leave", "global-room");
+//   };
+
+//   // ----------------- TOGGLES -----------------
+//   const toggleMute = () => {
+//     if (!localStreamRef.current) return;
+//     localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
+//     setMuted((m) => !m);
+//   };
+
+//   const toggleVideo = () => {
+//     if (!localStreamRef.current) return;
+//     localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
+//     setVideoOff((v) => !v);
+//   };
+
+//   const switchCamera = async () => {
+//     currentFacingMode.current = currentFacingMode.current === "user" ? "environment" : "user";
+//     joinRoom();
+//   };
+
+//   // ----------------- UI -----------------
+//   return (
+//     <div style={{ background: "#0b1020", height: "100vh", width: "100vw", display: "flex", flexDirection: "column" }}>
+//       <style>{`
+//         .video-area {
+//           flex: 1;
+//           display: flex;
+//           width: 100%;
+//           height: 100%;
+//         }
+//         .video-box {
+//           flex: 1;
+//           background: black;
+//           display: flex;
+//           justify-content: center;
+//           align-items: center;
+//         }
+//         .video-box.full {
+//           flex: 1 1 100%;
+//         }
+//         video {
+//           width: 100%;
+//           height: 100%;
+//           object-fit: cover;
+//         }
+//         .controls {
+//           position: fixed;
+//           left: 50%;
+//           transform: translateX(-50%);
+//           bottom: 22px;
+//           display: flex;
+//           gap: 18px;
+//           justify-content: center;
+//           align-items: center;
+//         }
+//         .control-btn {
+//           width: 64px;
+//           height: 64px;
+//           border-radius: 50%;
+//           background: #1f2937;
+//           display: flex;
+//           align-items: center;
+//           justify-content: center;
+//           color: white;
+//           font-size: 26px;
+//           cursor: pointer;
+//           box-shadow: 0 6px 18px rgba(0,0,0,0.5);
+//           transition: transform 0.2s ease;
+//         }
+//         .control-btn:hover { transform: scale(1.1); }
+//         .control-btn.end { background: #f87171; }
+//       `}</style>
+
+//       <div className="video-area">
+//         {!inCall ? (
+//           <div className="video-box full">
+//             <video ref={localVideoRef} autoPlay playsInline muted />
+//           </div>
+//         ) : (
+//           <>
+//             <div className="video-box">
+//               <video ref={localVideoRef} autoPlay playsInline muted />
+//             </div>
+//             <div className="video-box">
+//               <video ref={remoteVideoRef} autoPlay playsInline />
+//             </div>
+//           </>
+//         )}
+//       </div>
+
+//       <div className="controls">
+//         <div title="Mute" className={`control-btn ${muted ? "end" : ""}`} onClick={toggleMute}>
+//           {muted ? "🔈" : "🎤"}
+//         </div>
+//         <div title="Video" className={`control-btn ${videoOff ? "end" : ""}`} onClick={toggleVideo}>
+//           {videoOff ? "📵" : "📷"}
+//         </div>
+//         <div title="Switch Camera" className="control-btn" onClick={switchCamera}>🔁</div>
+//         <div title="End Call" className="control-btn end" onClick={endCall}>📞</div>
+//       </div>
+//     </div>
+//   );
+// }
