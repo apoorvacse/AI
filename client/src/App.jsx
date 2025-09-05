@@ -1711,40 +1711,27 @@
 import React, { useEffect, useRef, useState } from "react";
 import { io } from "socket.io-client";
 
-/** CHANGE THIS to your deployed signaling server (render/ngrok) */
-const SIGNALING_SERVER = "https://ai-ii3n.onrender.com"; // <- replace if needed
-
+const SIGNALING_SERVER = "https://ai-ii3n.onrender.com";
 const socket = io(SIGNALING_SERVER, { transports: ["websocket"] });
 
 export default function App() {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
-
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
-  const screenTrackRef = useRef(null);
+  const currentFacingMode = useRef("user");
 
   const [joined, setJoined] = useState(false);
   const [inCall, setInCall] = useState(false);
   const [muted, setMuted] = useState(false);
   const [videoOff, setVideoOff] = useState(false);
-  const [screenSharing, setScreenSharing] = useState(false);
-  const [recording, setRecording] = useState(false);
-  const [focus, setFocus] = useState(null); // "local" | "remote" | null
-  const [peerCount, setPeerCount] = useState(1); // show participants count (1 = you)
 
-  // recording helpers
-  const recorderRef = useRef(null);
-  const recordedChunksRef = useRef([]);
-  const canvasRef = useRef(null);
-  const rafRef = useRef(null);
-
-  // ICE servers example - keep Google STUN (works well)
-  const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-
+  // ----------------- SOCKET -----------------
   useEffect(() => {
-    socket.on("offer", async ({ sdp, from }) => {
-      console.log("⤴️ Received offer from", from);
+    // Try joining immediately
+    joinRoom();
+
+    socket.on("offer", async ({ sdp }) => {
       if (!pcRef.current) createPeerConnection();
       try {
         await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
@@ -1757,65 +1744,51 @@ export default function App() {
       }
     });
 
-    socket.on("answer", async ({ sdp, from }) => {
-      console.log("⤵️ Received answer from", from);
-      try {
-        if (pcRef.current && sdp) {
-          await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
-          setInCall(true);
-        }
-      } catch (e) {
-        console.error("Error applying answer:", e);
+    socket.on("answer", async ({ sdp }) => {
+      if (pcRef.current && sdp) {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(sdp));
+        setInCall(true);
       }
     });
 
-    socket.on("ice-candidate", async ({ candidate, from }) => {
+    socket.on("ice-candidate", async (candidate) => {
       try {
         if (pcRef.current && candidate) {
           await pcRef.current.addIceCandidate(new RTCIceCandidate(candidate));
         }
       } catch (e) {
-        console.error("Error adding ICE candidate:", e);
+        console.error("Error adding candidate:", e);
       }
     });
 
-    socket.on("user-joined", (payload) => {
-      console.log("user-joined", payload);
-      // increment peer count
-      setPeerCount((p) => Math.min(2, p + 1));
-      // if we already have local tracks and a pc, start the call (we become offerer)
-      if (localStreamRef.current && !inCall) {
+    socket.on("user-joined", () => {
+      if (pcRef.current && localStreamRef.current && !inCall) {
         startCall();
       }
     });
 
-    socket.on("user-left", (payload) => {
-      console.log("user-left", payload);
-      setPeerCount((p) => Math.max(1, p - 1));
-      // cleanup remote video
-      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    socket.on("user-left", () => {
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = null;
+      }
       setInCall(false);
-      setFocus(null);
     });
 
-    // auto-join global-room so friends using same public link will end up in same room
-    // Don't auto-join on mobile cross-origin restrictions? We call joinRoom on user click
-    // But to make it simpler we auto-join once so UI works quickly:
-    // (if you prefer not to auto-join, comment out next line and call joinRoom() via a button)
-    // joinRoom();
+    socket.on("connect_error", (err) => {
+      console.error("❌ Socket error:", err.message);
+    });
 
     return () => {
-      socket.off("offer");
-      socket.off("answer");
-      socket.off("ice-candidate");
-      socket.off("user-joined");
-      socket.off("user-left");
+      socket.off();
     };
-  }, [inCall]);
+  }, []);
 
-  function createPeerConnection() {
+  // ----------------- PEER CONNECTION -----------------
+  const createPeerConnection = () => {
     if (pcRef.current) return pcRef.current;
-    const pc = new RTCPeerConnection(rtcConfig);
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+    });
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -1824,402 +1797,116 @@ export default function App() {
     };
 
     pc.ontrack = (event) => {
-      // attach remote stream
-      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0];
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
-        setInCall(false);
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = event.streams[0];
       }
     };
 
     pcRef.current = pc;
     return pc;
-  }
+  };
 
-  async function joinRoom() {
+  // ----------------- JOIN -----------------
+  const joinRoom = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: currentFacingMode.current },
+        audio: true,
+      });
+
       localStreamRef.current = stream;
-      if (localVideoRef.current) {
-        localVideoRef.current.srcObject = stream;
-        localVideoRef.current.muted = true;
-      }
+      localVideoRef.current.srcObject = stream;
+      localVideoRef.current.muted = true;
 
       const pc = createPeerConnection();
-      // add senders
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
 
       socket.emit("join", "global-room");
       setJoined(true);
-      setPeerCount(1);
-      setFocus("local"); // you see yourself full by default
-      // If someone else was already in the room, server will have emitted user-joined and we'll get called
     } catch (e) {
-      console.error("getUserMedia failed:", e);
-      alert("Please allow camera and microphone.");
+      console.error("getUserMedia error:", e);
+      alert("⚠️ Please allow camera & microphone access.");
     }
-  }
+  };
 
-  async function startCall() {
-    try {
-      if (!pcRef.current) createPeerConnection();
-      const offer = await pcRef.current.createOffer();
-      await pcRef.current.setLocalDescription(offer);
-      socket.emit("offer", { room: "global-room", sdp: pcRef.current.localDescription });
-      setInCall(true);
-    } catch (e) {
-      console.error("startCall error:", e);
-    }
-  }
+  // ----------------- CALL -----------------
+  const startCall = async () => {
+    if (!pcRef.current) createPeerConnection();
+    const offer = await pcRef.current.createOffer();
+    await pcRef.current.setLocalDescription(offer);
+    socket.emit("offer", { room: "global-room", sdp: offer });
+  };
 
-  function endCall() {
-    // stop recording if active
-    if (recording) stopRecording();
-    // stop screen share if active
-    if (screenSharing) stopScreenShare();
-
+  const endCall = () => {
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((t) => t.stop());
-      localStreamRef.current = null;
     }
-    if (pcRef.current) {
-      pcRef.current.close();
-      pcRef.current = null;
-    }
-    if (localVideoRef.current) localVideoRef.current.srcObject = null;
-    if (remoteVideoRef.current) remoteVideoRef.current.srcObject = null;
+    if (pcRef.current) pcRef.current.close();
+    localVideoRef.current.srcObject = null;
+    remoteVideoRef.current.srcObject = null;
 
     setJoined(false);
     setInCall(false);
-    setFocus(null);
-    setPeerCount(1);
-    socket.emit("leave", "global-room");
-  }
 
-  function toggleMute() {
+    socket.emit("leave", "global-room");
+  };
+
+  // ----------------- TOGGLES -----------------
+  const toggleMute = () => {
     if (!localStreamRef.current) return;
     localStreamRef.current.getAudioTracks().forEach((t) => (t.enabled = !t.enabled));
     setMuted((m) => !m);
-  }
+  };
 
-  function toggleVideo() {
+  const toggleVideo = () => {
     if (!localStreamRef.current) return;
     localStreamRef.current.getVideoTracks().forEach((t) => (t.enabled = !t.enabled));
     setVideoOff((v) => !v);
-  }
-
-  async function switchCamera() {
-    try {
-      // find current facingMode from local video track settings if available
-      const currentTrack = localStreamRef.current?.getVideoTracks()[0];
-      const currentConstraints = currentTrack?.getSettings?.() || {};
-      const currentFacingMode = currentConstraints.facingMode === "environment" ? "environment" : "user";
-      const newFacing = currentFacingMode === "user" ? "environment" : "user";
-
-      const newStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: newFacing }, audio: true });
-      const newVideoTrack = newStream.getVideoTracks()[0];
-
-      const pc = createPeerConnection();
-      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
-      if (sender) await sender.replaceTrack(newVideoTrack);
-
-      // stop old cam track, keep audio
-      localStreamRef.current.getVideoTracks().forEach((t) => t.stop());
-      // add new stream tracks but keep old audio track so we don't break microphone
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      const updated = new MediaStream([newVideoTrack, audioTrack]);
-      localStreamRef.current = updated;
-      if (localVideoRef.current) localVideoRef.current.srcObject = updated;
-      localVideoRef.current.muted = true;
-    } catch (e) {
-      console.error("switchCamera error", e);
-    }
-  }
-
-  // screen share
-  async function startScreenShare() {
-    try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
-      const screenTrack = screenStream.getVideoTracks()[0];
-      screenTrackRef.current = screenTrack;
-
-      const pc = createPeerConnection();
-      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
-      if (sender) await sender.replaceTrack(screenTrack);
-
-      // show screen locally
-      if (localVideoRef.current) localVideoRef.current.srcObject = screenStream;
-      setScreenSharing(true);
-
-      screenTrack.onended = () => stopScreenShare();
-    } catch (e) {
-      console.error("startScreenShare error", e);
-    }
-  }
-
-  async function stopScreenShare() {
-    try {
-      const pc = createPeerConnection();
-      const sender = pc.getSenders().find((s) => s.track && s.track.kind === "video");
-      if (localStreamRef.current) {
-        const camTrack = localStreamRef.current.getVideoTracks()[0];
-        if (sender && camTrack) await sender.replaceTrack(camTrack);
-        if (localVideoRef.current) localVideoRef.current.srcObject = localStreamRef.current;
-      }
-      if (screenTrackRef.current) {
-        try { screenTrackRef.current.stop(); } catch {}
-        screenTrackRef.current = null;
-      }
-      setScreenSharing(false);
-    } catch (e) {
-      console.error("stopScreenShare error", e);
-    }
-  }
-
-  function toggleScreenShare() {
-    if (!screenSharing) startScreenShare();
-    else stopScreenShare();
-  }
-
-  // Recording: mix remote + local into canvas + audio context
-  function startRecording() {
-    if (!localStreamRef.current || !remoteVideoRef.current?.srcObject) {
-      alert("Both local and remote must be present to record.");
-      return;
-    }
-
-    const remote = remoteVideoRef.current;
-    const w = remote.videoWidth || 1280;
-    const h = remote.videoHeight || 720;
-    const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
-    canvasRef.current = canvas;
-    const ctx = canvas.getContext("2d");
-
-    const draw = () => {
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, w, h);
-      try { ctx.drawImage(remote, 0, 0, w, h); } catch {}
-      const local = localVideoRef.current;
-      const pipW = Math.floor(w / 4);
-      const pipH = Math.floor((pipW * (local.videoHeight || 240)) / (local.videoWidth || 320));
-      const pipX = w - pipW - 12;
-      const pipY = h - pipH - 12;
-      try { ctx.drawImage(local, pipX, pipY, pipW, pipH); } catch {}
-      rafRef.current = requestAnimationFrame(draw);
-    };
-    draw();
-
-    const canvasStream = canvas.captureStream(30);
-    const audioContext = new AudioContext();
-    const dest = audioContext.createMediaStreamDestination();
-
-    if (localStreamRef.current) {
-      try {
-        const srcLocal = audioContext.createMediaStreamSource(localStreamRef.current);
-        srcLocal.connect(dest);
-      } catch (e) { console.warn(e); }
-    }
-
-    const remoteStream = remoteVideoRef.current.srcObject;
-    if (remoteStream) {
-      try {
-        const srcRemote = audioContext.createMediaStreamSource(remoteStream);
-        srcRemote.connect(dest);
-      } catch (e) { console.warn(e); }
-    }
-
-    const mixed = new MediaStream();
-    canvasStream.getVideoTracks().forEach((t) => mixed.addTrack(t));
-    dest.stream.getAudioTracks().forEach((t) => mixed.addTrack(t));
-
-    const rec = new MediaRecorder(mixed, { mimeType: "video/webm;codecs=vp9" });
-    recordedChunksRef.current = [];
-    rec.ondataavailable = (ev) => { if (ev.data.size) recordedChunksRef.current.push(ev.data); };
-    rec.onstop = () => {
-      cancelAnimationFrame(rafRef.current);
-      const blob = new Blob(recordedChunksRef.current, { type: "video/webm" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url; a.download = `recording_${Date.now()}.webm`; a.click();
-      try { audioContext.close(); } catch (e) {}
-      canvasRef.current = null;
-    };
-    recorderRef.current = rec;
-    rec.start(1000);
-    setRecording(true);
-  }
-
-  function stopRecording() {
-    if (recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
-    setRecording(false);
-  }
-
-  // UI - click to focus remote/local
-  function handleVideoClick(which) {
-    // if both connected -> toggle focus
-    // which = "local" or "remote"
-    if (!inCall && which === "remote") return; // remote not yet present
-    setFocus((prev) => (prev === which ? null : which));
-  }
-
-  // styles - responsive behaviors
-  const containerStyle = {
-    height: "100vh",
-    display: "flex",
-    flexDirection: "column",
-    background: "linear-gradient(180deg,#0b1020 0%, #1b1f2a 100%)",
-    color: "white",
-    overflow: "hidden",
   };
 
-  // determine layout classes
-  const showEqualSplit = inCall && peerCount >= 2 && !focus;
-  const remoteIsFullscreen = focus === "remote" || (!focus && inCall && peerCount >= 2 && false);
+  const switchCamera = async () => {
+    currentFacingMode.current = currentFacingMode.current === "user" ? "environment" : "user";
+    joinRoom(); // re-join with new camera
+  };
 
+  // ----------------- UI -----------------
   return (
-    <div style={containerStyle}>
-      <div style={{ padding: 12, display: "flex", gap: 12, alignItems: "center" }}>
-        {!joined ? (
-          <button className="btn" onClick={joinRoom} style={btnStyle}>Join (camera)</button>
-        ) : (
-          <>
-            <button className="btn" onClick={startCall} style={btnStyle}>Start Call</button>
-            <button className="btn" onClick={endCall} style={{ ...btnStyle, background: "#b91c1c" }}>End Call</button>
-            <div style={{ marginLeft: "auto", opacity: 0.85, paddingRight: 12 }}>
-              Peers: {peerCount}
-            </div>
-          </>
-        )}
-      </div>
+    <div style={{ background: "#0b1020", height: "100vh", display: "flex", flexDirection: "column" }}>
+      <style>{`
+        .video-area { flex:1; display:flex; align-items:center; justify-content:center; gap:10px; }
+        .video-box { flex:1; background:black; border-radius:12px; overflow:hidden; display:flex; }
+        video { width:100%; height:100%; object-fit:cover; }
+        .controls { position:fixed; left:50%; transform:translateX(-50%); bottom:22px;
+          display:flex; gap:18px; justify-content:center; align-items:center; }
+        .control-btn { width:64px; height:64px; border-radius:50%; background:#1f2937;
+          display:flex; align-items:center; justify-content:center; color:white; font-size:26px; cursor:pointer;
+          box-shadow:0 6px 18px rgba(0,0,0,0.5); transition:transform 0.2s ease; }
+        .control-btn:hover { transform:scale(1.1); }
+        .control-btn.end { background:#f87171; } /* soft red */
+      `}</style>
 
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-        {/* when only you are present => local video full */}
-        {!inCall || peerCount === 1 ? (
-          <div style={singleBoxStyle}>
-            <video
-              ref={localVideoRef}
-              autoPlay
-              playsInline
-              muted
-              onClick={() => handleVideoClick("local")}
-              style={{ width: "100%", height: "100%", borderRadius: 12, objectFit: "cover", cursor: "pointer" }}
-            />
-            <div style={labelStyle}>You</div>
-          </div>
-        ) : (
-          // split screen or focus modes
-          <div style={{ display: "flex", width: "90%", height: "80%", gap: 12 }}>
-            <div style={focus === "local" ? bigBoxStyle : equalBoxStyle}>
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                onClick={() => handleVideoClick("local")}
-                style={{ width: "100%", height: "100%", borderRadius: 12, objectFit: "cover", cursor: "pointer" }}
-              />
-              <div style={labelStyle}>You</div>
-            </div>
-
-            <div style={focus === "remote" ? bigBoxStyle : equalBoxStyle}>
-              <video
-                ref={remoteVideoRef}
-                autoPlay
-                playsInline
-                onClick={() => handleVideoClick("remote")}
-                style={{ width: "100%", height: "100%", borderRadius: 12, objectFit: "cover", cursor: "pointer", background: "#000" }}
-              />
-              <div style={labelStyle}>Peer</div>
-            </div>
+      <div className="video-area">
+        <div className="video-box">
+          <video ref={localVideoRef} autoPlay playsInline muted />
+        </div>
+        {inCall && (
+          <div className="video-box">
+            <video ref={remoteVideoRef} autoPlay playsInline />
           </div>
         )}
       </div>
 
-      {/* floating controls */}
-      <div style={{ position: "fixed", bottom: 22, left: "50%", transform: "translateX(-50%)", display: "flex", gap: 12 }}>
-        <ActionButton title={muted ? "Unmute" : "Mute"} onClick={toggleMute} active={muted}>{muted ? "🔈" : "🎤"}</ActionButton>
-        <ActionButton title={videoOff ? "Turn video on" : "Turn video off"} onClick={toggleVideo} active={videoOff}>{videoOff ? "📵" : "📷"}</ActionButton>
-        <ActionButton title="Switch camera" onClick={switchCamera}>🔁</ActionButton>
-        <ActionButton title={screenSharing ? "Stop share" : "Share screen"} onClick={toggleScreenShare} active={screenSharing}>🖥️</ActionButton>
-        <ActionButton title={recording ? "Stop recording" : "Start recording"} onClick={() => (recording ? stopRecording() : startRecording())} active={recording}>⏺</ActionButton>
-        <ActionButton title="Hang up" onClick={endCall} active={false} danger>📞</ActionButton>
+      <div className="controls">
+        <div title="Mute" className={`control-btn ${muted ? "end" : ""}`} onClick={toggleMute}>
+          {muted ? "🔈" : "🎤"}
+        </div>
+        <div title="Video" className={`control-btn ${videoOff ? "end" : ""}`} onClick={toggleVideo}>
+          {videoOff ? "📵" : "📷"}
+        </div>
+        <div title="Switch Camera" className="control-btn" onClick={switchCamera}>🔁</div>
+        <div title="End Call" className="control-btn end" onClick={endCall}>📞</div>
       </div>
     </div>
-  );
-}
-
-// small helper components / styles
-const btnStyle = {
-  padding: "8px 12px",
-  background: "#111827",
-  color: "white",
-  border: "none",
-  borderRadius: 8,
-  cursor: "pointer"
-};
-
-const singleBoxStyle = {
-  width: "80%",
-  height: "80%",
-  borderRadius: 12,
-  overflow: "hidden",
-  boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
-  position: "relative",
-  background: "#000"
-};
-
-const equalBoxStyle = {
-  flex: 1,
-  borderRadius: 12,
-  overflow: "hidden",
-  boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
-  position: "relative",
-  background: "#000"
-};
-
-const bigBoxStyle = {
-  flex: 2,
-  borderRadius: 12,
-  overflow: "hidden",
-  boxShadow: "0 8px 30px rgba(0,0,0,0.6)",
-  position: "relative",
-  background: "#000"
-};
-
-const labelStyle = {
-  position: "absolute",
-  left: 12,
-  bottom: 12,
-  background: "rgba(0,0,0,0.5)",
-  padding: "4px 8px",
-  borderRadius: 6,
-  fontSize: 13,
-  color: "#fff"
-};
-
-function ActionButton({ children, onClick, title, active, danger }) {
-  return (
-    <button
-      title={title}
-      onClick={onClick}
-      style={{
-        width: 58,
-        height: 58,
-        borderRadius: "50%",
-        background: danger ? "#ef4444" : active ? "#0ea5a4" : "#0f1724",
-        border: "none",
-        color: "white",
-        fontSize: 22,
-        cursor: "pointer",
-        boxShadow: "0 8px 20px rgba(2,6,23,0.6)"
-      }}
-    >
-      {children}
-    </button>
   );
 }
 
