@@ -1,5 +1,5 @@
-//  Day 12
-// day 10 & 11 working fine
+          //day 10 & 11 working fine
+          
 import express from "express";
 import http from "http";
 import { Server } from "socket.io";
@@ -32,17 +32,6 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("user-joined", { id: socket.id });
   });
 
-  // --- NEW: Handle chat messages ---
-  socket.on("chatMessage", (data) => {
-    // data should contain { room, message, senderId }
-    if (!data?.room) return;
-    // Broadcast the message to all clients in the room
-    io.to(data.room).emit("receiveMessage", {
-      message: data.message,
-      senderId: socket.id // We use socket.id as a unique identifier for the sender
-    });
-  });
-
   socket.on("offer", (data) => {
     // { room, sdp }
     if (!data?.room) return;
@@ -55,16 +44,14 @@ io.on("connection", (socket) => {
     if (!data?.room) return;
     console.log(`📨 Answer from ${socket.id} for room: ${data.room}`);
     socket.to(data.room).emit("answer", { sdp: data.sdp, from: socket.id });
+    
   });
 
   socket.on("ice-candidate", (data) => {
     // { room, candidate }
     if (!data?.room) return;
     // forward candidate to others in room
-    socket.to(data.room).emit("ice-candidate", {
-      candidate: data.candidate,
-      from: socket.id
-    });
+    socket.to(data.room).emit("ice-candidate", { candidate: data.candidate, from: socket.id });
   });
 
   socket.on("leave", (roomId) => {
@@ -92,3 +79,5 @@ const PORT = process.env.PORT || 10000;
 server.listen(PORT, () => {
   console.log(`🚀 Signaling server running on port ${PORT}`);
 });
+
+
